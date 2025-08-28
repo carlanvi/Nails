@@ -582,8 +582,6 @@
 <form id="reviewForm" style="max-width:85%; margin:10px auto; text-align:center;">
 <div style="max-width: 50%; margin: 0 auto;">
 <input id="reviewName" placeholder="Your Name" required="" style="width:100%; margin-bottom:10px; padding:10px; border-radius:6px; border:1px solid #ccc;" type="text"/>
-</div>
-<textarea id="reviewComment" placeholder="Write your review..." required="" style="width:90%; height:80px; margin-bottom:10px; padding:10px; border-radius:6px; border:1px solid #ccc;"></textarea>
 <div id="starRating" style="font-size:24px; margin-bottom:10px; cursor:pointer; color:#ccc;">
 <span data-value="1">★</span>
 <span data-value="2">★</span>
@@ -1169,21 +1167,31 @@ function closeBookingModal() {
 }
 
 
+let selectedRating = 0;
+let reviewSectionInitialized = false;
+
 function initReviewSection() {
-  // Star rating UI logic
-  document.querySelectorAll('#starRating span').forEach(star => {
-    star.onclick = function() {
-      selectedRating = parseInt(star.getAttribute('data-value'));
-      document.querySelectorAll('#starRating span').forEach(s => {
-        s.style.color = parseInt(s.getAttribute('data-value')) <= selectedRating ? '#f39c12' : '#ccc';
-      });
-    }
-  });
+  if (reviewSectionInitialized) return;
+  reviewSectionInitialized = true;
+
+  // Star rating UI logic (event delegation)
+  const starRatingEl = document.getElementById('starRating');
+  if (starRatingEl) {
+    starRatingEl.addEventListener('click', (e) => {
+      if (e.target.tagName === 'SPAN') {
+        selectedRating = parseInt(e.target.getAttribute('data-value'));
+        document.querySelectorAll('#starRating span').forEach(s => {
+          const val = parseInt(s.getAttribute('data-value'));
+          s.style.color = val <= selectedRating ? '#f39c12' : '#ccc';
+        });
+      }
+    });
+  }
 
   // Submit review form logic
   const reviewForm = document.getElementById('reviewForm');
   if (reviewForm) {
-    reviewForm.onsubmit = async function(e) {
+    reviewForm.addEventListener('submit', async function (e) {
       e.preventDefault();
 
       const user = firebase.auth().currentUser;
@@ -1224,11 +1232,10 @@ function initReviewSection() {
         msg.style.color = "red";
         msg.textContent = "Error submitting review.";
       }
-    }
+    });
   }
 }
 
-// Update your showSection function:
 function showSection(sectionId) {
   document.querySelectorAll('.content-section').forEach(section =>
     section.classList.remove('active')
@@ -1238,68 +1245,18 @@ function showSection(sectionId) {
   if (sectionId === 'gallerySection') {
     loadGallery('galleryDisplay');
   } else if (sectionId === 'reviewsSection') {
-    loadReviews(currentUser); // ✅ Pass the user here
-    initReviewSection();      // ✅ Initialize listeners
+    loadReviews(firebase.auth().currentUser); // make sure currentUser is defined
+    initReviewSection(); // Initialize listeners only once
+    resetReviewForm();   // Reset form fields when switching to this section
   }
 }
 
-// Assume firebase is initialized and 'db' and 'auth' are set up
-
-let selectedRating = 0;
-
-// Star rating UI logic
-document.querySelectorAll('#starRating span').forEach(star => {
-  star.addEventListener('click', () => {
-    selectedRating = parseInt(star.getAttribute('data-value'));
-    document.querySelectorAll('#starRating span').forEach(s => {
-      s.style.color = parseInt(s.getAttribute('data-value')) <= selectedRating ? '#f39c12' : '#ccc';
-    });
-  });
-});
-
-// Submit review
-document.getElementById('reviewForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-
-  const user = firebase.auth().currentUser;
-  if (!user) {
-    if (confirm("You must be logged in to submit a review. Click OK to log in.")) {
-        window.location.href = 'login.html';
-    }
-    return;
+function resetReviewForm() {
+  const reviewForm = document.getElementById('reviewForm');
+  if (reviewForm) reviewForm.reset();
+  selectedRating = 0;
+  document.querySelectorAll('#starRating span').forEach(s => s.style.color = '#ccc');
 }
-
-  const name = document.getElementById('reviewName').value.trim();
-  const comment = document.getElementById('reviewComment').value.trim();
-  const msg = document.getElementById('reviewSubmitMsg');
-
-  if (!name || !comment || selectedRating === 0) {
-    msg.style.color = "red";
-    msg.textContent = "Please fill all fields and select a star rating.";
-    return;
-  }
-
-  try {
-    await db.collection('reviews').add({
-      name,
-      comment,
-      rating: selectedRating,
-      timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-      uid: user.uid
-    });
-
-    msg.style.color = "green";
-    msg.textContent = "Thank you for your review!";
-    document.getElementById('reviewForm').reset();
-    selectedRating = 0;
-    document.querySelectorAll('#starRating span').forEach(s => s.style.color = '#ccc');
-
-  } catch (error) {
-    console.error("Error submitting review:", error);
-    msg.style.color = "red";
-    msg.textContent = "Error submitting review.";
-  }
-});
 
 function formatReviewTime(timestamp) {
   if (!timestamp || !timestamp.toDate) return '';
@@ -1324,7 +1281,6 @@ function formatReviewTime(timestamp) {
   return `${diffYears} year${diffYears > 1 ? "s" : ""} ago`;
 }
 
-
 function loadReviews(user) {
   const container = document.getElementById('reviewsContainer');
   container.innerHTML = "<p>Loading reviews...</p>";
@@ -1339,11 +1295,8 @@ function loadReviews(user) {
     snapshot.forEach(doc => {
       const d = doc.data();
       const isOwner = user && d.uid === user.uid;
-
-      // Format time display
       const dateString = formatReviewTime(d.timestamp);
 
-      // Star rating display
       let stars = '';
       for (let i = 1; i <= 5; i++) {
         stars += `<span style="color: ${i <= d.rating ? '#f39c12' : '#ccc'};">★</span>`;
@@ -1361,13 +1314,12 @@ function loadReviews(user) {
   });
 }
 
-
 function deleteReview(docId) {
   const user = firebase.auth().currentUser;
-if (!user) {
-    window.location.href = 'login.html'; // send them to your login form
+  if (!user) {
+    window.location.href = 'login.html';
     return;
-}
+  }
 
   db.collection('reviews').doc(docId).get().then(doc => {
     if (!doc.exists) {
@@ -1381,7 +1333,6 @@ if (!user) {
       return;
     }
 
-    // If the review belongs to the current user, delete it
     db.collection('reviews').doc(docId).delete()
       .then(() => alert("Review deleted."))
       .catch(error => alert("Failed to delete review: " + error.message));
@@ -1390,20 +1341,20 @@ if (!user) {
   });
 }
 
-    document.addEventListener('DOMContentLoaded', function () {
-  const logoutBtn = document.getElementById('logoutBtn');
-  if (logoutBtn) {
-    logoutBtn.addEventListener('click', () => {
-      firebase.auth().signOut()
-        .then(() => {
-          window.location.href = 'login.html';
-        })
-        .catch((error) => {
-          console.error("Logout error:", error);
-          alert("Failed to log out.");
-        });
-    });
-  }
+document.addEventListener('DOMContentLoaded', function () {
+  const logoutBtn = document.getElementById('logoutBtn');
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', () => {
+      firebase.auth().signOut()
+        .then(() => {
+          window.location.href = 'login.html';
+        })
+        .catch((error) => {
+          console.error("Logout error:", error);
+          alert("Failed to log out.");
+        });
+    });
+  }
 });
 
 
